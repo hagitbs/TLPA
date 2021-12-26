@@ -91,11 +91,9 @@ def KLDS(signatures):
     return signatures
 
 
-def cross_categories(df):
+def cross_categories(categories):
     """Auxillary func for Sock Puppet Distance Calculation"""
-    a = list(df["category"].unique())
-    b = list(df["category"].unique())
-    index = pd.MultiIndex.from_product([a, b], names=["user1", "user2"])
+    index = pd.MultiIndex.from_product([categories, categories], names=["user1", "user2"])
     return pd.DataFrame(index=index).reset_index()
 
 
@@ -144,8 +142,8 @@ def create_signatures(df, epsilon_frac=2, sig_length=500, dvr=None):
     """Prepares the raw data and creates signatures for every category in the domain.
     `epsilon_frac` defines the size of epsilon, default is 1/(corpus size * 2)
     `sig_length` defines the length of the signature, default is 500"""
-    if not dvr:
-        dvr = create_dvr(df)
+    # if not dvr:
+    #     dvr = create_dvr(df)
     epsilon = 1 / (len(dvr) * epsilon_frac)
     vecs = (
         create_vector(df)
