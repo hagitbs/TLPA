@@ -1,4 +1,3 @@
-
 import simplejson as json
 from nltk.stem.snowball import SnowballStemmer
 import pandas as pd
@@ -6,6 +5,7 @@ import nltk
 from collections import Counter
 from google_cloud import GoogleCloud
 from pathlib import Path
+import LPA
 
 nltk.download("stopwords")
 nltk.download("punkt")
@@ -49,15 +49,26 @@ def df_it(d, i, j):
 
 if __name__ == "__main__":
     gcloud = GoogleCloud()
-    for i in range(0, 100_000, 5000):
-        gcloud.download(
-            f"LOCO_{i}.json", destination=DATA_FOLDER, bucket_name="loco_data"
-        )
-        with open(DATA_FOLDER/f"LOCO_{i}.json", "r") as f:
-            data = json.load(f)
-        d = {}
-        for j, article in enumerate(data):
-            d[article["doc_id"]] = dict(count_em(article["txt"]))
-            if len(d) % 1000 == 0:
-                df_it(d, i, j)
-                d = {}
+    # for i in range(0, 100_000, 5000):
+    #     gcloud.download(
+    #         f"LOCO_{i}.json", destination=DATA_FOLDER, bucket_name="loco_data"
+    #     )
+    #     with open(DATA_FOLDER/f"LOCO_{i}.json", "r") as f:
+    #         data = json.load(f)
+    #     d = {}
+    #     for j, article in enumerate(data):
+    #         d[article["doc_id"]] = dict(count_em(article["txt"]))
+    #         if len(d) % 1000 == 0:
+    #             df_it(d, i, j)
+    #             d = {}
+    l = []
+    for i in range(1000, 97000, 1000):
+        df = pd.read_csv(f"./data/freq/frequency_{i}.csv")
+        l.append(df)
+    fdf = pd.concat(l)
+    sig = LPA.create_signatures(fdf, epsilon_frac=5, sig_length=20)
+    sig.to_csv("sigs.csv", index=False)
+    print("finished sigs")
+    spd = LPA.SockPuppetDistance(sig, fdf)
+    spd.to_csv("spd.csv", index=False)
+    print("finished spd")

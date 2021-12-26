@@ -6,14 +6,13 @@ from scipy.spatial import distance
 def create_dvr(x):
     """Creates the DVR table of the domain"""
     dvr = (
-        x.iloc[:, [0, 2]]
-        .groupby("element")
+        x.groupby("element", as_index=False)
         .sum()
         .sort_values(by="frequency_in_category", ascending=False)
     )
-    tot = sum(dvr["frequency_in_category"])
-    dvr["global_weight"] = dvr / tot
-    dvr.reset_index(inplace=True)
+    dvr["global_weight"] = dvr["frequency_in_category"] / sum(
+        dvr["frequency_in_category"]
+    )
     dvr["rnk"] = range(1, len(dvr) + 1)
     return dvr
 
