@@ -1,14 +1,17 @@
+
 import simplejson as json
 from nltk.stem.snowball import SnowballStemmer
 import pandas as pd
 import nltk
 from collections import Counter
 from google_cloud import GoogleCloud
+from pathlib import Path
 
-nltk.download()
+nltk.download("stopwords")
+nltk.download("punkt")
 stemmer = SnowballStemmer("english")
 ignored_words = nltk.corpus.stopwords.words("english")
-DATA_FOLDER = "./data"
+DATA_FOLDER = Path("./data")
 
 
 def count_em(article):
@@ -41,16 +44,16 @@ def df_it(d, i, j):
         )
         .sort_values("category")
     )
-    df.to_csv(f"frequency_{i + j + 1}.csv", index=False)
+    df.to_csv(f"./data/frequency_{i + j + 1}.csv", index=False)
 
 
 if __name__ == "__main__":
     gcloud = GoogleCloud()
     for i in range(0, 100_000, 5000):
         gcloud.download(
-            f"data/LOCO_{i}.json", path=DATA_FOLDER, bucket_name="loco_data"
+            f"LOCO_{i}.json", destination=DATA_FOLDER, bucket_name="loco_data"
         )
-        with open(f"data/LOCO_{i}.json", "r") as f:
+        with open(DATA_FOLDER/f"LOCO_{i}.json", "r") as f:
             data = json.load(f)
         d = {}
         for j, article in enumerate(data):
@@ -58,4 +61,3 @@ if __name__ == "__main__":
             if len(d) % 1000 == 0:
                 df_it(d, i, j)
                 d = {}
-        break

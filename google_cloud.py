@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import json
@@ -68,6 +69,7 @@ class GoogleCloud:
         clean: bool = True,
     ):
         destination_path = destination / blob_name
+        print(destination_path)
         if destination_path.exists():
             if settings["VERBOSE"]:
                 print(f"skipped downloading {destination_path.name}, since it already exists")
@@ -85,7 +87,6 @@ class GoogleCloud:
                 return
             if clean:
                 blob_name = blob_name.split("/")[-1]
-            destination_path = destination / blob_name
             if not destination_path.exists():
                 blob.download_to_filename(destination_path)
                 if settings["VERBOSE"]:
