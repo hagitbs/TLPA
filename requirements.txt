@@ -1,0 +1,6 @@
+ijson
+simplejson
+pandas
+nltk
+numpy
+scipy

@@ -48,7 +48,7 @@ def df_it(d, i, j):
 
 
 if __name__ == "__main__":
-    gcloud = GoogleCloud()
+    # gcloud = GoogleCloud()
     # for i in range(0, 100_000, 5000):
     #     gcloud.download(
     #         f"LOCO_{i}.json", destination=DATA_FOLDER, bucket_name="loco_data"
@@ -62,21 +62,22 @@ if __name__ == "__main__":
     #             df_it(d, i, j)
     #             d = {}
     l = []
-    for i in range(1000, 97000, 1000):
+    for i in range(0, 97000, 1000):
         df = pd.read_csv(f"./data/freq/frequency_{i}.csv")
         l.append(df)
     fdf = pd.concat(l)
-    #  LPA.create_dvr(fdf)
-    dvr = pd.read_csv("data/dvr.csv")
+    dvr = LPA.create_dvr(fdf)
+    dvr.to_csv("data/dvr1.csv")
+    # dvr = pd.read_csv("data/dvr.csv")
     # dvr.to_csv("data/dvr.csv", index=False)
     # for i in range(1000, 97000, 1000):
     #     df = pd.read_csv(f"data/freq/frequency_{i}.csv")
     #     sig = LPA.create_signatures(df, epsilon_frac=2, sig_length=200, dvr=dvr)
     #     sig.to_csv(f"data/sigs/sigs200_{i}.csv", index=False)
     #     print(f"did {i}")
-    sig = LPA.create_signatures(fdf, epsilon_frac=5, sig_length=200, dvr=dvr)
-    sig.to_csv("sigs.csv", index=False)
-    print("finished sigs")
-    spd = LPA.SockPuppetDistance(sig, fdf)
-    spd.to_csv("spd.csv", index=False)
+    # sig = LPA.create_signatures(fdf, epsilon_frac=5, sig_length=200, dvr=dvr)
+    # sig.to_csv("sigs.csv", index=False)
+    # print("finished sigs")
+    # spd = LPA.SockPuppetDistance(sig, fdf)
+    # spd.to_csv("spd.csv", index=False)
     # print("finished spd")
