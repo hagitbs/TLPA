@@ -1,3 +1,4 @@
+from typing import Optional
 import pandas as pd
 import numpy as np
 from scipy.spatial import distance
@@ -13,27 +14,15 @@ def create_dvr(x):
     dvr["global_weight"] = dvr["frequency_in_category"] / sum(
         dvr["frequency_in_category"]
     )
-    dvr["rnk"] = range(1, len(dvr) + 1)
     return dvr
 
 
 def create_vector(df):
     """Creates a vector for every category in the domain"""
-    counts = df.groupby(["category", "element"], as_index=False).sum()
-    sums = (
-        df.groupby("category", as_index=False)
-        .sum()
-        .rename(columns={"frequency_in_category": "total_weight"})
-    )
-    vector = pd.merge(counts, sums, on="category")
-    vector["local_weight"] = vector["frequency_in_category"] / vector["total_weight"]
-    lrnk = (
-        vector.groupby("category")
-        .rank(method="max", ascending=False)["local_weight"]
-        .rename("lrnk")
-    )
-    vector = pd.merge(vector, lrnk, left_index=True, right_index=True)
-    return vector
+    df["local_weight"] = df["frequency_in_category"] / df.groupby("category")[
+        "frequency_in_category"
+    ].transform("sum")
+    return df
 
 
 def calc_distance_summary(dvr_vec, sample_vec):
@@ -55,34 +44,6 @@ def distance_summary(dvr, vecs):
     return dist_sum
 
 
-def signatures(dvr, vecs, n, epsilon):
-    """Creates the signature for every category in the domain. Default signature length is 500"""
-    dvr_vec = np.array(dvr.sort_values("element")["global_weight"])
-    to_concat = []
-    for j in range(len(vecs)):
-        sample_vec = np.array(vecs.iloc[j, :])
-        KL_vec = np.zeros(len(sample_vec))
-        existing_vec = np.zeros(len(sample_vec))
-        for i in range(len(KL_vec)):
-            KL_vec[i] = (sample_vec[i] - dvr_vec[i]) * np.log10(
-                sample_vec[i] / dvr_vec[i]
-            )
-            if sample_vec[i] != epsilon:
-                existing_vec[i] = 1
-        ind = np.argpartition(KL_vec, -n)[-n:]
-        ind = ind[np.argsort(KL_vec[ind])]
-        sigs = pd.DataFrame(
-            columns=["category", "element", "KL", "existing_element_flag"],
-            index=range(n),
-        )
-        sigs["category"] = vecs.index[j]
-        sigs["element"] = np.array(vecs.columns)[ind][::-1]
-        sigs["KL"] = KL_vec[ind][::-1]
-        sigs["existing_element_flag"] = existing_vec[ind][::-1]
-        to_concat.append(sigs)
-    return pd.concat(to_concat)
-
-
 def KLDS(signatures):
     """Auxillary func for Sock Puppet Distance Calculation"""
     signatures["existing_element_flag"].replace(0, -1, inplace=True)
@@ -93,7 +54,9 @@ def KLDS(signatures):
 
 def cross_categories(categories):
     """Auxillary func for Sock Puppet Distance Calculation"""
-    index = pd.MultiIndex.from_product([categories, categories], names=["user1", "user2"])
+    index = pd.MultiIndex.from_product(
+        [categories, categories], names=["user1", "user2"]
+    )
     return pd.DataFrame(index=index).reset_index()
 
 
@@ -138,24 +101,59 @@ def SockPuppetDistance(signatures, df):
     return SPD(KLDS(signatures), cross_categories(df))
 
 
-def create_signatures(df, epsilon_frac=2, sig_length=500, dvr=None):
+def create_signatures(df, epsilon_frac=2, dvr=None):
     """Prepares the raw data and creates signatures for every category in the domain.
     `epsilon_frac` defines the size of epsilon, default is 1/(corpus size * 2)
     `sig_length` defines the length of the signature, default is 500"""
-    # if not dvr:
-    #     dvr = create_dvr(df)
+    if not isinstance(dvr, pd.DataFrame):
+        dvr = create_dvr(df)
     epsilon = 1 / (len(dvr) * epsilon_frac)
-    vecs = (
-        create_vector(df)
-        .pivot_table(values="local_weight", index="category", columns="element")
-        .fillna(epsilon)
+    vecs = create_vector(df).pivot_table(
+        values="local_weight", index="category", columns="element"
     )
-    return signatures(dvr, vecs, sig_length, epsilon)
+    mask = vecs.isna().stack(dropna=False).reset_index(drop=True)
+    vecs = vecs.fillna(epsilon)
+    dvr_array = (
+        dvr[dvr["element"].isin(vecs.columns)]
+        .sort_values("element")["global_weight"]
+        .to_numpy()
+    )
+    vecs_array = vecs.to_numpy()
+    subtracted = (
+        pd.DataFrame(
+            (vecs_array - dvr_array) * np.log10(vecs_array / dvr_array),
+            index=vecs.index,
+            columns=vecs.columns,
+        )
+        .stack(dropna=False)
+        .reset_index()
+        .rename(columns={0: "KL"})
+    )
+    subtracted["missing"] = mask
+    return subtracted
 
 
-def distance_from_domain(df, dvr=None):
+def diminishing_return(
+    sigs: pd.DataFrame, sig_length: int = 500, categories: int = 1000
+):
+    length = len(sigs) // categories
+    return sigs[([True] * sig_length + [False] * (length - sig_length)) * categories]
+
+
+def create_and_cut(
+    df,
+    dvr: Optional[pd.DataFrame] = None,
+    epsilon_frac: int = 2,
+    sig_length: int = 500,
+    categories: int = 1000,
+):
+    sigs = create_signatures(df, epsilon_frac, dvr)
+    return diminishing_return(sigs, sig_length, categories)
+
+
+def distance_from_domain(df: pd.DataFrame, dvr: Optional[pd.DataFrame] = None):
     """Prepares the data and returns the distance of every category in the domain"""
-    if not dvr:
+    if not isinstance(dvr, pd.DataFrame):
         dvr = create_dvr(df)
     epsilon = 1 / (len(dvr) * 2)
     vector = create_vector(df)
