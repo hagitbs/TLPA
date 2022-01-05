@@ -31,6 +31,7 @@ def calc_distance_summary(dvr_vec, sample_vec):
 
 
 def distance_summary(dvr, vecs):
+    # TODO: fix
     """Calculates the distance of every category from the domain"""
     dvr_vec = np.array(dvr.sort_values("element")["global_weight"])
     dist_sum = pd.DataFrame(index=vecs.index, columns=["distance_summary"], data=0)
@@ -130,6 +131,7 @@ def create_signatures(df, epsilon_frac=2, dvr=None):
         .rename(columns={0: "KL"})
     )
     subtracted["missing"] = mask
+    subtracted = subtracted.sort_values(["category", "KL"], ascending=[True, False])
     return subtracted
 
 
