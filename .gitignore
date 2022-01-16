@@ -1,5 +1,6 @@
-data/*
-freq/*
+data/*.csv
+data/*/*.csv
+data/*.json
 *.conf 
 keyfile.json
 *.ipynb
