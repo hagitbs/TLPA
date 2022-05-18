@@ -1,4 +1,3 @@
-import os
 from collections import Counter
 from pathlib import Path
 
@@ -8,10 +7,10 @@ import pandas as pd
 import simplejson as json
 from nltk.stem.snowball import SnowballStemmer
 
-nltk.download("stopwords")
-nltk.download("punkt")
-stemmer = SnowballStemmer("english")
-ignored_words = nltk.corpus.stopwords.words("english")
+# nltk.download("stopwords")
+# nltk.download("punkt")
+# stemmer = SnowballStemmer("english")
+# ignored_words = nltk.corpus.stopwords.words("english")
 DATA_FOLDER = Path("./data")
 
 
@@ -71,4 +70,12 @@ def create_frequencies():
         break
 
 
-create_frequencies()
+def create_metadata():
+    with open("data/loco/json/LOCO.json") as f:
+        data = ijson.items(f, "item")
+        items = [(v["doc_id"], v.get("date", pd.NA), v["subcorpus"]) for v in data]
+    metadata = pd.DataFrame(items, columns=["doc_id", "date", "subcorpus"])
+    metadata.to_csv("data/metadata.csv", index=False)
+
+
+create_metadata()

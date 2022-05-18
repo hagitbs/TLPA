@@ -19,4 +19,4 @@ DATA_FOLDER = Path("./data")
 if __name__ == "__main__":
     dvr = pd.read_csv("data/dvr.csv")
     ilpa = IterLPA(blocks=97, size=1000, dvr=dvr)
-    ilpa.run_sockpuppets()
+    ilpa.iter_sigs()
