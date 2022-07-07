@@ -2,7 +2,7 @@ data/*/*/*.csv
 data/*/*.csv
 data/*.csv
 data/*/*/*.json
-results/*.html
+results/*
 
 *.conf 
 keyfile.json

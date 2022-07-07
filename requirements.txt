@@ -9,3 +9,4 @@ requests
 cachetools
 scikit-learn
 statsmodels
+textblob

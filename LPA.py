@@ -9,25 +9,27 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from helpers import timing
+from algo import KLD_distance
 
 
 class LPA:
     def __init__(self, dvr: pd.DataFrame, epsilon_frac: int = 2):
-        self.dvr = dvr.sort_values("frequency_in_category", ascending=False)
+        self.dvr = dvr.sort_values("global_weight", ascending=False)
         self.epsilon = 1 / (len(dvr) * epsilon_frac)
 
     @staticmethod
     def create_dvr(frequency: pd.DataFrame) -> pd.DataFrame:
         """Creates the DVR table of the domain"""
-        dvr = (
-            frequency.groupby("element", as_index=False)
-            .sum()
-            .sort_values(by="frequency_in_category", ascending=False)
-        )
+        dvr = frequency.groupby("element", as_index=False).sum()
         dvr["global_weight"] = dvr["frequency_in_category"] / sum(
             dvr["frequency_in_category"]
         )
-        return dvr.reset_index(drop=True)
+        dvr = (
+            dvr.drop(columns=["frequency_in_category"])
+            .sort_values("global_weight", ascending=False)
+            .reset_index(drop=True)
+        )
+        return dvr
 
     def create_pvr(self, frequency: pd.DataFrame) -> pd.DataFrame:
         """Creates a vector for every category in the domain"""
@@ -35,15 +37,6 @@ class LPA:
             "frequency_in_category"
         ] / frequency.groupby("category")["frequency_in_category"].transform("sum")
         return frequency
-
-    @staticmethod
-    def KLD(P: np.ndarray, Q: np.ndarray) -> np.ndarray:
-        """
-        Kullback-Leibler distance.
-        P represents the data, the observations, or a measured probability distribution.
-        Q represents instead a theory, a model, a description or an approximation of P.
-        """
-        return (P - Q) * (ma.log(P) - ma.log(Q))
 
     def normalize_pvr(
         self, pvr: pd.DataFrame, pvr_lengths: np.array, missing: np.array
@@ -62,7 +55,7 @@ class LPA:
             ]
             for item in sublist
         ]
-        pvr["local_weight"] = pvr["local_weight"] * pd.Series(betas)
+        pvr["normalized_weight"] = pvr["local_weight"] * pd.Series(betas)
         return pvr
 
     def betas(self, pvr: pd.DataFrame) -> pd.DataFrame:
@@ -74,14 +67,13 @@ class LPA:
         missing = len(self.dvr) - pvr_lengths
         return self.normalize_pvr(pvr, pvr_lengths, missing)
 
-    def create_arrays(self, frequency: pd.DataFrame) -> pd.DataFrame:
+    def create_arrays(self, pvr: pd.DataFrame) -> pd.DataFrame:
         """Prepares the raw data and creates signatures for every category in the domain.
         `epsilon_frac` defines the size of epsilon, default is 1/(corpus size * 2)
         `sig_length` defines the length of the signature, default is 500"""
-        pvr = self.create_pvr(frequency)
         vecs = self.betas(pvr)
         vecs = vecs.pivot_table(
-            values="local_weight", index="element", columns="category"
+            values="normalized_weight", index="element", columns="category"
         )
         self.dvr_array = (
             self.dvr[self.dvr["element"].isin(vecs.index)]
@@ -93,25 +85,30 @@ class LPA:
         )
 
     def create_distances(self, frequency: pd.DataFrame) -> pd.DataFrame:
-        frequency = frequency.sort_values("category").reset_index(drop=True)
-        self.create_arrays(frequency)
+        try:
+            dvr_array, vecs_array = getattr(self, "dvr_array"), getattr(
+                self, "vecs_array"
+            )
+        except AttributeError:
+            frequency = frequency.sort_values("category").reset_index(drop=True)
+            pvr = self.create_pvr(frequency)
+            self.create_arrays(pvr)
         categories = frequency["category"].drop_duplicates()
         elements = frequency["element"].drop_duplicates().dropna().sort_values()
-        return (
+        distances = (
             pd.DataFrame(
-                self.KLD(self.dvr_array, self.vecs_array),
-                index=categories,
-                columns=elements,
+                KLD_distance(dvr_array, vecs_array), index=categories, columns=elements
             )
             .stack()
             .reset_index()
             .rename(columns={0: "KL"})
         )
+        return distances
 
-    def add_underused(self, distances: pd.DataFrame) -> pd.DataFrame:
-        underused = np.greater(self.dvr_array, self.vecs_array)
-        underused = underused.reshape(np.multiply(*underused.shape))
-        distances["underused"] = underused
+    def add_overused(self, distances: pd.DataFrame) -> pd.DataFrame:
+        overused = np.less(self.dvr_array, self.vecs_array)
+        overused = overused.reshape(np.multiply(*overused.shape))
+        distances["overused"] = overused
         return distances
 
     def cut(self, sigs: pd.DataFrame, sig_length: int = 500) -> pd.DataFrame:
@@ -127,7 +124,7 @@ class LPA:
         self, frequency: pd.DataFrame, sig_length: int = 500
     ) -> pd.DataFrame:
         distances = self.create_distances(frequency)
-        sigs = self.add_underused(distances)
+        sigs = self.add_overused(distances)
         cut = self.cut(sigs, sig_length)
         return cut
 
@@ -164,17 +161,13 @@ class IterLPA(LPA):
         self._range = range(0, self.size * self.blocks, self.size)
 
     @staticmethod
-    def create_dvr(df):
+    def create_dvr(freq):
         """Creates the DVR table of the domain"""
-        dvr = (
-            df.groupby("element", as_index=False)
-            .sum()
-            .sort_values(by="frequency_in_category", ascending=False)
-        )
+        dvr = freq.groupby("element", as_index=False).sum()
         dvr["global_weight"] = dvr["frequency_in_category"] / sum(
             dvr["frequency_in_category"]
         )
-        return dvr
+        return dvr.sort_values(by="global_weight", ascending=False)
 
     def _shorthand(self, stage):
         shorthand = {"frequency": "freq", "signatures": "sigs"}
@@ -191,6 +184,17 @@ class IterLPA(LPA):
         for i in self._range:
             l.append(pd.read_csv(f"data/freq/frequency_{i}.csv"))
         self.create_dvr(pd.concat(l)).to_csv("dvr1.csv", index=False)
+
+    def create_and_cut(
+        self, frequency: pd.DataFrame, sig_length: int = 500
+    ) -> pd.DataFrame:
+        frequency = frequency.sort_values("category").reset_index(drop=True)
+        pvr = self.create_pvr(frequency)
+        self.create_arrays(pvr)
+        distances = self.create_distances(frequency)
+        sigs = self.add_overused(distances)
+        cut = self.cut(sigs, sig_length)
+        return cut
 
     def run_sockpuppets(self):
         for i, j in self._grid():
