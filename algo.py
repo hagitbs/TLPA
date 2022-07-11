@@ -13,11 +13,17 @@ def KLD_distance(P: np.ndarray, Q: np.ndarray) -> np.ndarray:
     return (P - Q) * (ma.log(P) - ma.log(Q))
 
 
+def KLD_distance_consecutive(x: np.ndarray) -> np.ndarray:
+    """
+    Kullback-Leibler distance between a set of consecutive observations.
+    """
+    Q, P = x[:-1], x[1:]
+    return (P - Q) * (ma.log(P) - ma.log(Q))
+
+
 def KLD_divergence_consecutive(x: np.ndarray) -> np.ndarray:
     """
     Kullback-Leibler divergence between a set of consecutive observations.
-    Q is the first obsevation, used as a theory, a model, a description or an approximation of P.
-    P is the second observation, representing the data or a measured probability distribution.
     """
     Q, P = x[:-1], x[1:]
     return P * (ma.log(P) - ma.log(Q))
