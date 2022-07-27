@@ -5,8 +5,8 @@ nltk
 numpy
 scipy
 matplotlib
-requests
-cachetools
 scikit-learn
 statsmodels
 textblob
+google-cloud-storage
+google-cloud-secret-manager

@@ -3,6 +3,7 @@ data/**/*.json
 results/**/*.csv
 results/**/*.html
 results/**/*.png
+results/**/*.txt
 
 *.conf 
 keyfile.json

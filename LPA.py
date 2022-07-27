@@ -9,7 +9,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from helpers import timing
-from algo import KLD_distance
+from algo import KLD_distance, KLD_distance_overused
 
 
 class LPA:
@@ -55,7 +55,7 @@ class LPA:
             ]
             for item in sublist
         ]
-        pvr["normalized_weight"] = pvr["local_weight"] * pd.Series(betas)
+        pvr["local_weight"] = pvr["local_weight"] * pd.Series(betas)
         return pvr
 
     def betas(self, pvr: pd.DataFrame) -> pd.DataFrame:
@@ -68,23 +68,32 @@ class LPA:
         return self.normalize_pvr(pvr, pvr_lengths, missing)
 
     def create_arrays(self, pvr: pd.DataFrame) -> pd.DataFrame:
-        """Prepares the raw data and creates signatures for every category in the domain.
+        """
+        Prepares the raw data and creates signatures for every category in the domain.
         `epsilon_frac` defines the size of epsilon, default is 1/(corpus size * 2)
-        `sig_length` defines the length of the signature, default is 500"""
+        `sig_length` defines the length of the signature, default is 500
+        Make sure pvr has all of the elements in it!
+        """
         vecs = self.betas(pvr)
         vecs = vecs.pivot_table(
-            values="normalized_weight", index="element", columns="category"
+            values="local_weight", index="element", columns="category"
         )
-        self.dvr_array = (
+        filtered_dvr = (
             self.dvr[self.dvr["element"].isin(vecs.index)]
-            .sort_values("element")["global_weight"]
-            .to_numpy()
+            .sort_values("element")
+            .reset_index(drop=True)
         )
-        self.vecs_array = (
-            vecs.fillna(self.epsilon).replace(0, self.epsilon).to_numpy().T
-        )
+        # print(vecs.loc["covid-19"])
+        # print(filtered_dvr[filtered_dvr["element"] == "covid-19"])
+        vecs = vecs.fillna(self.epsilon).replace(0, self.epsilon)
+        self.ordered_elements = vecs.index
+        self.ordered_categories = vecs.columns
+        self.dvr_array = filtered_dvr["global_weight"]
+        self.vecs_array = vecs.T
 
-    def create_distances(self, frequency: pd.DataFrame) -> pd.DataFrame:
+    def create_distances(
+        self, frequency: pd.DataFrame, overused: bool = True
+    ) -> pd.DataFrame:
         try:
             dvr_array, vecs_array = getattr(self, "dvr_array"), getattr(
                 self, "vecs_array"
@@ -93,23 +102,36 @@ class LPA:
             frequency = frequency.sort_values("category").reset_index(drop=True)
             pvr = self.create_pvr(frequency)
             self.create_arrays(pvr)
-        categories = frequency["category"].drop_duplicates()
-        elements = frequency["element"].drop_duplicates().dropna().sort_values()
-        distances = (
-            pd.DataFrame(
-                KLD_distance(dvr_array, vecs_array), index=categories, columns=elements
-            )
-            .stack()
-            .reset_index()
-            .rename(columns={0: "KL"})
+        distances = pd.DataFrame(
+            (KLD_distance_overused if overused else KLD_distance)(
+                vecs_array.to_numpy(), dvr_array.to_numpy()
+            ),
+            index=self.ordered_categories,
+            columns=self.ordered_elements,
         )
-        return distances
+        max_distances = distances[distances.abs().sum().nlargest(30).index]
+        distances = [
+            sig.sort_values(ascending=False) for _, sig in distances.iterrows()
+        ]
+        # distances = distances.stack().reset_index().rename(columns={0: "KL"})
+        return distances, max_distances
 
-    def add_overused(self, distances: pd.DataFrame) -> pd.DataFrame:
-        overused = np.less(self.dvr_array, self.vecs_array)
-        overused = overused.reshape(np.multiply(*overused.shape))
-        distances["overused"] = overused
-        return distances
+    # def add_overused(self, distances: pd.DataFrame) -> pd.DataFrame:
+    #     overused = np.less(self.dvr_array, self.vecs_array)
+    #     overused = overused.reshape(np.multiply(*overused.shape))
+    #     distances["overused"] = overused
+    #     return distances
+
+    def create_distances_low_memory(self, vectors):
+        l = []
+        for _, vector in vectors.groupby("category"):
+            merged = pd.merge(self.dvr, vector, on="element", how="left").fillna(
+                {"local_weight": self.epsilon}
+            )
+            l.append(
+                KLD_distance_overused(merged["local_weight"], merged["global_weight"])
+            )
+        return pd.concat(l)
 
     def cut(self, sigs: pd.DataFrame, sig_length: int = 500) -> pd.DataFrame:
         # TODO: diminishing return
@@ -123,13 +145,12 @@ class LPA:
     def create_and_cut(
         self, frequency: pd.DataFrame, sig_length: int = 500
     ) -> pd.DataFrame:
-        distances = self.create_distances(frequency)
-        sigs = self.add_overused(distances)
+        sigs = self.create_distances(frequency)
         cut = self.cut(sigs, sig_length)
         return cut
 
     def distance_summary(self, frequency: pd.DataFrame) -> pd.DataFrame:
-        sigs = self.create_distances(frequency)
+        sigs = self.create_distances(frequency, overused=False)
         return sigs.groupby("category").sum()
 
     @timing
@@ -191,8 +212,7 @@ class IterLPA(LPA):
         frequency = frequency.sort_values("category").reset_index(drop=True)
         pvr = self.create_pvr(frequency)
         self.create_arrays(pvr)
-        distances = self.create_distances(frequency)
-        sigs = self.add_overused(distances)
+        sigs = self.create_distances(frequency)
         cut = self.cut(sigs, sig_length)
         return cut
 
