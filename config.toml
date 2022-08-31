@@ -1,0 +1,8 @@
+corpus = "enron" # loco_mainstream, loco_conspiracy
+end_date = 2001-06-01 # 2020-07-01 for loco, 2005-01-01 for enron
+epsilon = 0 # specify epsilon if known ahead of time
+freq = "W" # MS, D, W
+lambda = 1 # > 0
+metric = "sqrt_JSD" # KLD_divergence_consecutive, JSD, JSD_max, sqrt_JSD
+start_date = 2000-08-01 # 2000-01-01 for loco, 1997-01-01 for enron
+threshold = 0 # minimum texts in group to consider

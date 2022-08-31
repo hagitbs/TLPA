@@ -102,9 +102,12 @@ def create_metadata():
         data = ijson.items(f, "item")
         items = [(v["doc_id"], v.get("date", pd.NA), v["subcorpus"]) for v in data]
     metadata = pd.DataFrame(items, columns=["category", "date", "subcorpus"])
-    metadata.to_csv("data/loco/metadata.csv", index=False)
+    for sc in ("conspiracy", "mainstream"):
+        metadata[metadata["subcorpus"] == sc].drop(columns=["subcorpus"]).to_csv(
+            f"data/loco_{sc}/metadata.csv", index=False
+        )
 
 
 # break_up_json()
 # create_frequencies()
-# create_metadata()
+create_metadata()

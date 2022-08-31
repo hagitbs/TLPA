@@ -1,158 +1,159 @@
+from glob import glob
 from pathlib import Path
-from typing import Literal, Tuple
+from typing import Dict, List, Literal, Tuple
 
-from more_itertools import consecutive_groups
 import numpy as np
 import pandas as pd
+import tomli
+from more_itertools import consecutive_groups
 
+from corpora import Corpus, Matrix
+from helpers import read, write
 from LPA import LPA
-from algo import KLD_divergence_consecutive
-from visualize import show_kldf
+from visualize import metric_bar_chart, moving_avg
 
-Subcorpus = Literal["full", "conspiracy", "mainstream"]
-
-
-def create_metadata(threshold=20) -> pd.DataFrame:
-    metadata = pd.read_csv("data/loco/metadata.csv", parse_dates=["date"])
-    metadata = metadata[metadata["date"].dt.year >= 1990]
-    metadata["dt"] = metadata["date"].astype("str").str[:7]
-    grouped = metadata.groupby(["subcorpus", "dt"])["category"].count()
-    grouped = grouped[grouped > threshold]
-    return metadata, grouped
+with open("config.toml", mode="rb") as fp:
+    config = tomli.load(fp)
+PATH = Path("results") / config["corpus"]
 
 
-def create_freq(threshold=20) -> pd.DataFrame:
-    metadata, filter_ = create_metadata(threshold)
+def create_metadata() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    metadata = pd.read_csv(
+        f"data/{config['corpus']}/metadata.csv", parse_dates=["date"]
+    )
+    metadata = metadata[
+        (metadata["date"] >= pd.Timestamp(config["start_date"]))
+        & (metadata["date"] <= pd.Timestamp(config["end_date"]))
+    ]
+    if config["threshold"] > 0:
+        resampled = metadata.resample(config["freq"], on="date").count()
+        filter_ = resampled[resampled > config["threshold"]].dropna()
+        filter_ = filter_.index.astype(str).str[:7]
+        metadata = metadata[metadata["date"].astype(str).str[:7].isin(filter_)]
+    return metadata
+
+
+# def create_freq(threshold=20) -> pd.DataFrame:
+#     metadata, filter_ = create_metadata(threshold)
+#     base_freq = []
+#     for i in range(0, 96000, 1000):
+#         base_freq.append(pd.read_csv(f"data/loco/np_freq/frequency_{i}.csv"))
+#     base_freq = pd.merge(
+#         pd.concat(base_freq),
+#         metadata[["category", "date", "subcorpus"]],
+#         on="category",
+#         how="inner",
+#     ).rename(columns={"count": "frequency_in_category"})
+#     base_freq["dt"] = base_freq["date"].astype("str").str[:7]
+
+#     base_freq = base_freq.set_index(["subcorpus", "dt"])
+#     base_freq = (
+#         base_freq.loc[filter_.index]
+#         .sort_values("date")
+#         .reset_index(level=0)
+#         .reset_index(drop=True)
+#     )
+#     return base_freq
+
+
+def create_freq() -> pd.DataFrame:
+    metadata = create_metadata()
     base_freq = []
-    for i in range(0, 96000, 1000):
-        base_freq.append(pd.read_csv(f"data/loco/np_freq/frequency_{i}.csv"))
+    for p in glob(f"data/{config['corpus']}/np_freq/*.csv"):
+        base_freq.append(pd.read_csv(p))
     base_freq = pd.merge(
         pd.concat(base_freq),
-        metadata[["category", "date", "subcorpus"]],
+        metadata[["category", "date"]],
         on="category",
         how="inner",
-    ).rename(columns={"count": "frequency_in_category"})
-    base_freq["dt"] = base_freq["date"].astype("str").str[:7]
-
-    base_freq = base_freq.set_index(["subcorpus", "dt"])
-    base_freq = (
-        base_freq.loc[filter_.index]
-        .sort_values("date")
-        .reset_index(level=0)
-        .reset_index(drop=True)
     )
+    base_freq["category"] = pd.Categorical(base_freq["category"])
+    # .rename(columns={"count": "frequency_in_category"}) #FIXME: frequency_in_category in the firstplace
     return base_freq
 
 
-def freq_window(
-    base_freq: pd.DataFrame,
-    quantity: int | str | tuple,
-    cumulative: bool,
-    direction: Literal["from", "to", "range"] = "range",
-    subcorpus: Subcorpus = "full",
-) -> pd.DataFrame:
-    if subcorpus != "full":
-        base_freq = base_freq[base_freq["subcorpus"] == subcorpus].reset_index(
-            drop=True
-        )
-    if cumulative:
-        if direction == "to":
-            return base_freq[base_freq["date"] <= quantity].reset_index(drop=True)
-        elif direction == "from":
-            return base_freq[base_freq["date"] >= quantity].reset_index(drop=True)
-    elif direction == "range":
-        return base_freq[
-            (base_freq["date"] >= quantity[0]) & (base_freq["date"] <= quantity[1])
-        ].reset_index(drop=True)
-    else:
-        return base_freq[base_freq["date"] == quantity].reset_index(drop=True)
-
-
 def tw_freq(
-    base_freq: pd.DataFrame,
-    subcorpus: Subcorpus = "full",
-    freq: Literal["MS", "D", "W"] = "MS",
-    start_date: str = "1990-01-01",
-    end_date: str = "2020-07-01",
-    filter_: pd.Series | None = None,
+    base_freq: pd.DataFrame, freq: Literal["MS", "D", "W"] = "MS"
 ) -> pd.DataFrame:
-    l = []
-    s = pd.to_datetime(start_date, format="%Y-%m-%d")
-    e = pd.to_datetime(end_date, format="%Y-%m-%d")
-    for dr in zip(pd.date_range(s, e, freq=freq), pd.date_range(s, e, freq=freq[:1])):
-        conditional_dir = {"direction": "range"} if freq in ("W", "MS") else {}
-        if freq == "W":
-            dr = dr[0] - pd.Timedelta("6D"), dr[0]
-        freq_df = freq_window(
-            base_freq, dr, False, subcorpus=subcorpus, **conditional_dir
-        )
-        dvr = LPA.create_dvr(freq_df).assign(**{"date": dr[0]})
-        if filter_:
-            dvr = dvr[dvr["element"] == filter_]
-        l.append(dvr)
-    tw_freq = pd.concat(l).reset_index(drop=True)
-    return tw_freq
+    df = base_freq.groupby([pd.Grouper(freq=freq, key="date"), "element"]).sum()
+    res = (
+        (df / base_freq.resample(freq, on="date").sum())
+        .reset_index()
+        .rename(columns={"frequency_in_category": "global_weight"})
+    )
+    return res
 
 
-def kld_single(tw_freq):
-    kld_res = []
-    date_col = tw_freq["date"].drop_duplicates().to_list()
-    for i in range(len(date_col) - 1):
-        Q = tw_freq[tw_freq["date"] == date_col[i]]
-        P = tw_freq[tw_freq["date"] == date_col[i + 1]]
-        merged = pd.merge(Q, P, on="element", how="outer")[
-            ["global_weight_x", "global_weight_y"]
-        ].fillna(1e-7)
-        merged /= merged.sum()
-        kld_res.append(np.sum(KLD_divergence_consecutive(merged.to_numpy())))
-    kldf = pd.DataFrame({"date": date_col[1:], "KLD": kld_res})
-    return kldf
+def check_metric(
+    matrix: Matrix, delta: str | float, iter_: int
+) -> List[Tuple[int, int]]:
+    metric = config["metric"]
+    df = matrix.apply(metric)
+    if delta == "median":
+        delta = df[metric].median()
+    metric_bar_chart(df, rule_value=delta, metric=metric).save(
+        f"results/{config['corpus']}/bar_charts/{metric}_delta_{delta}_iter_{iter_}.html"
+    )
+    low = df[df[metric] < delta]
+    groups = [
+        (min(i), max(i))
+        for i in [list(x) for x in consecutive_groups(low.index)]
+        if len(i) > 1
+    ]
+    return groups
 
 
-def dBTC(base_freq, tw_freq, subcorpus):
+def dBTC(
+    base_freq: pd.DataFrame,
+    matrix: Matrix,
+    corpus: Corpus,
+    delta: float | str,
+) -> Tuple[Matrix, Corpus]:
     """
     δ-bounded timeline compression using Kullback-Leibler divergence under a delta threshold - in this case the median.
     """
     iter_ = 0
-    kldf = kld_single(tw_freq)
-    cutoff = kldf["KLD"].median()
-    show_kldf(kldf, rule_value=cutoff).save(
-        f"results/{subcorpus}/bar_charts/bar_iter_{iter_}.html"
-    )
-    low_xentropy = kldf[kldf["KLD"] < cutoff]
-    groups = [
-        (min(i), max(i))
-        for i in [list(x) for x in consecutive_groups(low_xentropy.index)]
-        if len(i) > 1
-    ]
+    groups = check_metric(matrix, delta, iter_)
     print(f"should be around {sum(b-a for a, b in groups)} iterations")
     while len(groups) > 0:
         iter_ += 1
-        date = low_xentropy.loc[groups[0][0], "date"]
-        next_date = low_xentropy.loc[groups[0][0] + 1, "date"]
-        sq = squeeze_freq(base_freq, date, next_date, subcorpus)
-        split_freq = tw_freq[~tw_freq["date"].isin((date, next_date))]
-        tw_freq = (
-            pd.concat([split_freq, sq])
-            .sort_values(["date", "global_weight"], ascending=[True, False])
-            .reset_index(drop=True)
+        date_code = groups[0][0]
+        date = corpus.code_to_cat(date_code)
+        next_date = corpus.code_to_cat(date_code + 1)
+        matrix.delete(date_code + 1, 0)
+        corpus.update_dates(corpus.code_to_cat(date_code + 1))
+        squeezed_matrix = squeeze_freq(base_freq, date, next_date, corpus)
+        matrix.matrix[date_code] = squeezed_matrix.epsilon_modification(
+            epsilon=config["epsilon"], lambda_=config["lambda"]
         )
-        kldf = kld_single(tw_freq)
-        kldf_barchart = show_kldf(kldf, rule_value=cutoff)
-        kldf_barchart.save(f"results/{subcorpus}/bar_charts/bar_iter_{iter_}.html")
-        low_xentropy = kldf[kldf["KLD"] < cutoff]
-        groups = [
-            (min(i), max(i))
-            for i in [list(x) for x in consecutive_groups(low_xentropy.index)]
-            if len(i) > 1
-        ]
+        groups = check_metric(matrix, delta, iter_)
         print(f"finished iteration {iter_}")
         if len(groups) == 0:
-            return tw_freq, kldf
+            return matrix, corpus
 
 
-def squeeze_freq(base_freq, min_date, max_date, subcorpus):
-    base_freq = base_freq[base_freq["subcorpus"] == subcorpus]
+def create_mdvr(matrix: Matrix, corpus: Corpus) -> pd.DataFrame:
+    dvr = pd.DataFrame(
+        {
+            "element": corpus.element_cat.categories,
+            "global_weight": matrix.normalized_average_weight(),
+        }
+    )
+    dvr = (
+        dvr.reset_index()
+        .rename(columns={"index": "element_code"})
+        .sort_values("global_weight", ascending=False)
+        .reset_index(drop=True)
+    )
+    return dvr
+
+
+def squeeze_freq(
+    base_freq: pd.DataFrame,
+    min_date: pd.Timestamp,
+    max_date: pd.Timestamp,
+    corpus: Corpus,
+) -> Matrix:
     squeezed = (
         base_freq[(base_freq["date"] >= min_date) & (base_freq["date"] <= max_date)]
         .groupby("element", as_index=False)
@@ -162,23 +163,12 @@ def squeeze_freq(base_freq, min_date, max_date, subcorpus):
     squeezed["global_weight"] = squeezed["frequency_in_category"] / sum(
         squeezed["frequency_in_category"]
     )
-    return squeezed.sort_values(by=["date", "frequency_in_category"], ascending=False)
-
-
-def create_mdvr(vectors):
-    average_weight = vectors.groupby("element")["local_weight"].sum() / len(
-        vectors["category"].drop_duplicates()
-    )
-    normalized_average_weight = average_weight / average_weight.sum()
-    dvr = (
-        normalized_average_weight.rename("global_weight")
-        .sort_values(ascending=False)
-        .reset_index()
-    )
-    return dvr
+    matrix = corpus.pivot(squeezed)
+    return matrix
 
 
 def create_and_cut(vectors):
+    # FIXME for matrix
     vectors = vectors.rename(
         columns={"date": "category", "global_weight": "local_weight"}
     ).drop(columns=["frequency_in_category"])
@@ -190,34 +180,32 @@ def create_and_cut(vectors):
     return dvr, sigs, max_distances
 
 
-def write(*args: Tuple[pd.DataFrame, str]):
-    for df, name in args:
-        df.to_csv(PATH / f"{name}.csv", index=False)
-        print(f"wrote {name}")
-
-
-def read(name: str) -> pd.DataFrame:
-    return pd.read_csv(PATH / f"{name}.csv", parse_dates=["date"])
-
-
 if __name__ == "__main__":
     """
     The main process of this code reads
     """
-    PATH = Path("results")
-    base_freq = create_freq(threshold=20)
-    write((base_freq, "base_freq"))
+    base_freq = create_freq()
+    # write(PATH, (base_freq, "base_freq"))
     # base_freq = read("base_freq")
-    for subcorpus in ("mainstream", "conspiracy"):
-        PATH = Path("results") / subcorpus
-        tw_freq_df = tw_freq(base_freq, subcorpus, "MS", "2000-01-01", "2020-07-01")
-        write((tw_freq_df, "tw_freq"))
-        # tw_freq_df = read("tw_freq")
-        squeezed_freq, kldf = dBTC(base_freq, tw_freq_df, subcorpus)
-        write((squeezed_freq, "squeezed_freq"), (kldf, "final_kldf"))
-        # squeezed_freq = read("squeezed_freq")
-        dvr, sigs, max_distances = create_and_cut(squeezed_freq)
-        write((dvr, "dvr"), (max_distances, "max_distances"))
-        for sig in sigs:
-            name = sig.name.strftime("%Y-%m-%d")
-            write((sig.rename("KL").reset_index(), f"sigs/sigs_{name}"))
+    tw_freq_df = tw_freq(base_freq, config["freq"])
+    write((tw_freq_df, "tw_freq"))
+    # tw_freq_df = read(f"tw_freq")
+    corpus = Corpus(tw_freq_df)
+    matrix = corpus.pivot(tw_freq_df)
+    # moving_average(matrix, window=3)
+    matrix = matrix.epsilon_modification(
+        epsilon=config["epsilon"], lambda_=config["lambda"]
+    )
+    check_metric(matrix, "median", 1)
+    # matrix, vectorizor = dBTC(base_freq, matrix, vectorizor, delta="median")
+    ## write(PATH, (squeezed_freq, "squeezed_freq"), (kldf, "final_kldf"))
+    ## squeezed_freq = read("squeezed_freq")
+    dvr = create_mdvr(matrix, corpus)
+    write(PATH, (dvr, "dvr"))
+    write(PATH, (matrix, "matrix"))
+
+    # dvr, sigs, max_distances = create_and_cut(squeezed_freq)
+    # write(PATH, (max_distances, "max_distances"))
+    # for sig in sigs:
+    #     name = sig.name.strftime("%Y-%m-%d")
+    #     write(PATH, (sig.rename("KL").reset_index(), f"sigs/sigs_{name}"))

@@ -10,3 +10,5 @@ statsmodels
 textblob
 google-cloud-storage
 google-cloud-secret-manager
+tomli
+bottleneck
