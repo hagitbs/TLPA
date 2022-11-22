@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from importlib import import_module
 from pathlib import Path
-from typing import Dict, Literal, Tuple
+from typing import Dict, List, Literal, Tuple
+import json
 
 import numpy as np
 import pandas as pd
@@ -74,9 +75,9 @@ class Matrix:
 
 
 class Corpus:
-    def __init__(self, data: pd.DataFrame):
-        self.date_cat = pd.Categorical(data["date"], ordered=True).dtype
-        self.element_cat = pd.Categorical(data["element"], ordered=True).dtype
+    def __init__(self, date_cat: pd.Series | pd.DatetimeIndex, element_cat: pd.Series):
+        self.date_cat = pd.Categorical(date_cat, ordered=True).dtype
+        self.element_cat = pd.Categorical(element_cat, ordered=True).dtype
 
     def update_dates(self, date):
         self.date_cat = pd.CategoricalDtype(
@@ -96,3 +97,17 @@ class Corpus:
         )
         matrix[idx[:, 0], idx[:, 1]] = data["global_weight"]
         return Matrix(matrix[min(d.cat.codes) : max(d.cat.codes) + 1])
+
+    # def save(self, path: Path):
+    #     with open(path / "corpus.json", "w") as fp:
+    #         d = {
+    #             "date": self.date_cat.categories.astype(str).to_list(),
+    #             "elements": self.element_cat.categories.astype(str).to_list(),
+    #         }
+    #         json.dump(d, fp)
+
+    # @staticmethod
+    # def load(path: Path) -> Corpus:
+    #     with open(path / "corpus.json") as f:
+    #         data = json.load(f)
+    #     return Corpus(pd.to_datetime(data["date"]), pd.Series(data["elements"]))

@@ -81,3 +81,20 @@ def moving_avg(df):
         alt.Y2("min:Q"),
     )
     return alt.layer(area, line)
+
+
+def sockpuppet_matrix(spd, corpus1_name, corpus2_name):
+    cdf = (
+        spd.rename_axis(index=[corpus1_name])
+        .melt(ignore_index=False, var_name=corpus2_name)
+        .reset_index()
+    )
+    return (
+        alt.Chart(cdf)
+        .mark_rect()
+        .encode(
+            x=alt.X(f"{corpus1_name}:O", axis=alt.Axis(orient="top")),
+            y=f"{corpus2_name}:O",
+            color="value",
+        )
+    )

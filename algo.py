@@ -21,7 +21,14 @@ def KLD_distance_overused(P: np.ndarray, Q: np.ndarray) -> np.ndarray:
     P - Q makes the regular KL divergence a distance complying with the triangle inequality.
     np.where(P < Q, -1, 1) adds a minus sign if P < Q
     """
-    return np.where(P < Q, -1, 1) * (P - Q) * (np.log2(P / Q))
+    return np.where(P < Q, -1, 1) * (P - Q) * np.log2(P / Q)
+
+    # arr = np.subtract(P, Q)
+    # arr2 = np.divide(P, Q)
+    # np.log2(arr2, out=arr2)
+    # np.multiply(arr, arr2, out=arr)
+    # np.multiply(np.where(P < Q, -1, 1), arr, out=arr)
+    # return arr
 
 
 def KLD_distance_consecutive(x: np.ndarray) -> np.ndarray:
@@ -51,7 +58,8 @@ def entropy(P: np.ndarray) -> np.ndarray:
     """
     Shannon entropy without summation.
     """
-    return -P * ma.log2(P)
+    P = np.multiply(P, np.log2(P, where=P > 1e-10))
+    return np.where(P != 0, -P, P)
 
 
 def JSD(P_t: np.array) -> float:
