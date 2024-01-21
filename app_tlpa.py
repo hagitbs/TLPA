@@ -7,7 +7,7 @@ import tomli
 from more_itertools import consecutive_groups
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 from corpora import Corpus, Matrix
-from algo import KLD_distance_overused
+from algo import KLD
 from helpers import read, write
 from visualize import metric_bar_chart
 
@@ -137,7 +137,7 @@ def create_distances(
     matrix: Matrix, dvr: pd.DataFrame, corpus: Corpus
 ) -> Tuple[List[pd.DataFrame], pd.DataFrame]:
     dvr = dvr.sort_values("element_code")["global_weight"].to_numpy()
-    x = KLD_distance_overused(dvr, matrix.matrix)
+    x = KLD(dvr, matrix.matrix)
     distances = pd.DataFrame(
         x,
         index=corpus.date_cat.categories,

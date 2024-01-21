@@ -12,3 +12,7 @@ google-cloud-secret-manager
 tomli
 bottleneck
 gensim
+more-itertools
+altair
+altair_saver
+openpyxl

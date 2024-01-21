@@ -1,17 +1,16 @@
 from glob import glob
 from pathlib import Path
 from typing import List, Literal, Tuple
-from psutil import Process
 from math import floor
 
 import pandas as pd
 import tomli
 from more_itertools import consecutive_groups
 
-from xLPA import Corpus, Matrix
-from algo import KLD_distance_overused
+from LPA import Corpus, Matrix, sockpuppet_distance
+from algo import symmetrized_KLD
 from helpers import read, write
-from visualize import metric_bar_chart, moving_avg
+from visualize import metric_bar_chart, moving_avg, sockpuppet_matrix
 
 with open("config.toml", mode="rb") as fp:
     config = tomli.load(fp)
@@ -57,18 +56,20 @@ def create_metadata() -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 def create_freq() -> pd.DataFrame:
     metadata = create_metadata()
-    base_freq = []
-    for p in glob(f"data/{config['corpus']}/np_freq/*.csv"):
-        base_freq.append(pd.read_csv(p))
-    base_freq = pd.merge(
-        pd.concat(base_freq),
-        metadata[["category", "date"]],
-        on="category",
-        how="inner",
-    ).rename(columns={"count": "frequency_in_document"})
-    base_freq["category"] = pd.Categorical(base_freq["category"])
-    # #FIXME: frequency_in_category in the firstplace
-    return base_freq
+    print(metadata.head())
+    raise
+    for sc in ("conspiracy", "mainstream"):
+        base_freq = []
+        for p in glob(f"data/{config['corpus']}/np_freq/*.csv"):
+            base_freq.append(pd.read_csv(p))
+        base_freq = pd.merge(
+            pd.concat(base_freq),
+            metadata[["document", "date"]],
+            on="document",
+            how="inner",
+        ).rename(columns={"count": "frequency_in_document"})
+        base_freq["document"] = pd.Categorical(base_freq["document"])
+        return base_freq
 
 
 def tw_freq(
@@ -176,7 +177,7 @@ def create_distances(
     matrix: Matrix, dvr: pd.DataFrame, corpus: Corpus
 ) -> Tuple[List[pd.DataFrame], pd.DataFrame]:
     dvr = dvr.sort_values("element_code")["global_weight"].to_numpy()
-    x = KLD_distance_overused(dvr, matrix.matrix)
+    x = symmetrized_KLD(dvr, matrix.matrix)
     distances = pd.DataFrame(
         x,
         index=corpus.date_cat.categories,
@@ -188,41 +189,41 @@ def create_distances(
     return distances, max_distances
 
 
-def element_kv():
-    k = ["שם יישוב", "סמל יישוב"]
-    v = ["name", "element"]
-    kv = pd.read_excel("data/elections/bycode2021.xlsx")[k].rename(
-        columns=dict(zip(k, v))
-    )
-    return pd.concat(
-        [kv, pd.DataFrame(["מעטפות חיצוניות", 99999], index=v).T], ignore_index=True
-    )
+# def element_kv():
+#     k = ["שם יישוב", "סמל יישוב"]
+#     v = ["name", "element"]
+#     kv = pd.read_excel("data/elections/bycode2021.xlsx")[k].rename(
+#         columns=dict(zip(k, v))
+#     )
+#     return pd.concat(
+#         [kv, pd.DataFrame(["מעטפות חיצוניות", 99999], index=v).T], ignore_index=True
+#     )
 
 
 if __name__ == "__main__":
     """
     The main process of this code reads
     """
-    # base_freq = create_freq()
-    # write(PATH, base_freq, "base_freq")
+    base_freq = create_freq()
+    write(PATH, base_freq, "base_freq")
     # # # base_freq = read("base_freq.csv")
-    # tw_freq_df = tw_freq(base_freq, config["freq"])
-    # write(PATH, tw_freq_df, "tw_freq")
+    tw_freq_df = tw_freq(base_freq, config["freq"])
+    write(PATH, tw_freq_df, "tw_freq")
     # # tw_freq_df = read(PATH, f"tw_freq.csv")
 
     # ####
-    # freq = tw_freq_df.rename(
-    #     columns={"date": "document", "frequency_in_category": "frequency_in_document"}
-    # )
+    freq = tw_freq_df.rename(
+        columns={"date": "document", "frequency_in_category": "frequency_in_document"}
+    )
     # freq[freq["document"] == pd.to_datetime("2011-05-01")].sort_values(
     #     "frequency_in_document", ascending=False
     # ).to_csv("may2011mains.csv", index=False)
-    freq = pd.read_csv("data/elections/np_freq/0.csv")
-    corpus = Corpus(freq=freq)
+    # freq = pd.read_csv(f"data/{config['corpus']}/np_freq/1.csv")
+    corpus = Corpus(freq=freq, name=config["corpus"])
     dvr = corpus.create_dvr(equally_weighted=True)
     write(PATH, dvr, "dvr")
-    epsilon_frac = 2
-    epsilon = 1 / (len(dvr) * epsilon_frac)
+    # epsilon_frac = 2
+    # epsilon = 1 / (len(dvr) * epsilon_frac)
     epsilon = config["epsilon"]
     # epsilon = 4.07880630809523e-07
     # print(Process().memory_info().rss)
@@ -233,6 +234,8 @@ if __name__ == "__main__":
         sig_length=config["sig_length"],
         prevelent=prevelent,
     )
+    spd = sockpuppet_distance(corpus, corpus)
+
     write(PATH, temporary_array, "temporary_array")
     # print(Process().memory_info().rss)
     average_distance = corpus.create_dvr(
@@ -244,29 +247,28 @@ if __name__ == "__main__":
     # matrix = Matrix(read(PATH, "matrix.npy"))
     # sigs, max_distances = create_distances(matrix, dvr, corpus)
     # write(PATH, most_significant, "max_distances")
-    wordlist = {}
-    word = 99999
-    ekv = element_kv()
+    # wordlist = {}
+    # word = config["word"]
     for sig in signatures:
-        # name = sig.name.strftime("%Y-%m-%d")
         name = sig.name
         sig = sig.rename("KL").reset_index()
-        sig = pd.merge(sig, ekv, left_on="index", right_on="element")
-        wordlist[name] = sig[sig["index"] == word].loc[:, "KL"].iloc[0]
+        # wordlist[name] = sig[sig["index"] == word].loc[:, "KL"].iloc[0]
         write(
             PATH,
-            sig.head(500),
+            sig,
             f"sigs/sigs_with_prevelence_{prevelent}_{name}_epsilon_{epsilon}",
             color=True,
         )
-        # KLD_distance_overused(sig, average_distance)
-    word_df = (
-        pd.DataFrame.from_dict(wordlist, orient="index")
-        .rename(columns={0: word})
-        .sort_index()
-    )
-    print(word_df.mean())
-    write(PATH, word_df, f"sigs/{word}_{epsilon}", color=True)
+        # symmetrized_KLD(sig, average_distance)
+    # word_df = (
+    #     pd.DataFrame.from_dict(wordlist, orient="index")
+    #     .rename(columns={0: word})
+    #     .sort_index()
+    # )
+    # print(word_df.mean())
+    # write(PATH, word_df, f"sigs/{word}_{epsilon}", color=True)
+    spname = f"republican_sockpuppets.html"
+    # sockpuppet_matrix(spd).save(PATH / spname)
     # for df in most_significant:
     #     name = sig.name.strftime("%Y-%m-%d")
     #     write(PATH, (sig.rename("KL").reset_index(), f"most_significant/ms_{name}"))

@@ -4,15 +4,17 @@ data/**/*.xls
 data/**/*.xlsx
 data/**/*.md
 data/**/*.zip
+data/**/*.txt
 results/**/*.html
 results/**/*.csv
 results/**/*.png
 results/**/*.txt
 results/**/*.xlsx
 results/**/*.npy
-
+final_results/*
 *.conf 
 keyfile.json
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

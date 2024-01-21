@@ -54,11 +54,13 @@ def write(
     print(f"wrote {name}")
 
 
-def read(path: Path, name_with_ext: str) -> pd.DataFrame | np.array:
+def read(
+    path: Path, name_with_ext: str, parse_date: str = "date"
+) -> pd.DataFrame | np.array:
     if name_with_ext[-3:] == "npy":
         return np.load(path / name_with_ext)
     else:
         return pd.read_csv(
             path / name_with_ext,
-            parse_dates=(["date"] if name_with_ext != "dvr.csv" else []),
+            parse_dates=([parse_date] if name_with_ext != "dvr.csv" else []),
         )
