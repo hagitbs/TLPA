@@ -25,4 +25,4 @@ To run the basic TLPA, run `python LOCO_TLPA.py`. The script does the following:
    4. Finally writes mDVR to `results/{subcorpus}/dvr.csv`, signatures to `results/{subcorpus}/sigs/sig_{timestamp}.csv`, and highest absolute distances to `results/{subcorpus}/max_distances.csv`
 
 ### Visualize results
-Using a couple functions from `visualize.py`, go to [LOCO_results.ipynb](LOCO_results.ipynb) to view timelines of frequency data and KLD distances over time.
+Using a couple functions from `visualize.py`, go to [LOCO_results.ipynb](LOCO_results.ipynb) to view timelines of frequency data and KLD distances over time.# TLPA
