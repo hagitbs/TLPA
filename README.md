@@ -8,7 +8,7 @@ To download data request the `keyfile.json` file from Alex. Put it in the `LOCO-
 
 ### Data Exploration
 
-A short exploartion of the data can be dound in [LOCO_data_exploration.ipynb](LOCO_data_exploration.ipynb).
+A short exploartion of the data can be dound in [notebooks/LOCO_data_exploration.ipynb](LOCO_data_exploration.ipynb).
 
 
 ### TLPA
